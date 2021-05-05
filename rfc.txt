@@ -1,0 +1,147 @@
+
+
+
+
+Internet Engineering Task Force (IETF)                    Z. G. Goldberg
+Request for Comments: 2100                                          Zach
+Category: Informational                                   M. P. Polichuk
+ISSN: 2070-1721                                                      Max
+                                                              4 May 2021
+
+
+                    CIS 553 Music Streaming Project
+
+Status of This Memo
+
+   This document is not an Internet Standards Track specification; it is
+   published for informational purposes.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Not all documents
+   approved by the IESG are candidates for any level of Internet
+   Standard; see Section 2 of RFC 7841.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   https://www.rfc-editor.org/info/rfc2100.
+
+Copyright Notice
+
+   Copyright (c) 2021 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (https://trustee.ietf.org/license-info) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   1.  Introduction
+   2.  How to Run
+   3.  Message Format
+     3.1.  A note on framing
+   4.  DASH Chunking
+   5.  Server-Client State
+
+1.  Introduction
+
+   This RFC is a description of our protocol for our client-server music
+   streaming application.
+
+2.  How to Run
+
+   Make sure that you are using Python version 2.7
+
+   *  python server.py [port] [music directory path]
+
+   *  python client.py [server ip] [server port]
+
+   See HOW_TO_RUN.md for how to ssh into our EC2 instance.
+
+3.  Message Format
+
+   (10-byte size)(command_type)%%%%%(song_num)%%%%%(data)
+
+   The first part of the message is 10 bytes that represent the size of
+   the rest of the message.
+
+   The rest of the message, following the size, is comprised of 3
+   fields, deliminiated by the string "%%%%%"
+
+   The first of these fields is the command type field, which specifies
+   what kind of message is being sent.  The second field is the song_num
+   field, which specifies which song is being requested.  This is only
+   non-empty for a PLAY command.  The third field is the data field,
+   which can contain MP3 data (in a DATA message), song names and
+   numbers (in a MP3S message), or an error message (in an ERRO
+   message).  Descriptions of all message types are shown below:
+
+   *  PLAY.  Sent from client to server to intiate a song.  Song_num
+      field specifies which song to play.  Data field is empty.
+
+   *  LIST.  Sent from client to server to see all possible songs to
+      play.  Song_num field is empty.  Data field is empty.
+
+   *  STOP.  Sent from client to server to stop streaming a song.
+      Song_num field is empty.  Data field is empty.
+
+   *  DATA.  Sent from server to client in response to a PLAY command.
+      Song_num specifies which song is being sent.  Data field contains
+      one chunk of MP3 data (see DASH Chuking Section).
+
+   *  MP3S.  Sent from server to client in response to a LIST message.
+      Song_num field is empty.  Data field list of song_num, song name
+      pairs.
+
+   *  FINI.  Sent from server to client to signify that a song has been
+      completely streamed.  Song_num field is empty.  Data field list of
+      song_num, song name pairs.
+
+   *  ERRO.  Sent from either client or server when an error condition
+      arises.  Song_num field is empty.  Data field contians error
+      message.
+
+3.1.  A note on framing
+
+   Framing is determined by the size field of the message.  This allows
+   the client to read only exactly as many bytes as the server sends.
+   Upon begining to read any message, the client will only read 10 bytes
+   so that it knows how much to read for the rest of the message.
+
+4.  DASH Chunking
+
+   Music is streamed using a DASH model.  Upon the initialization of the
+   server, a DASH server class is created.  This class loads all of the
+   MP3 files in the specified directory into chunks of size 3996 bytes.
+   When the server is streaming to the client, it will send one of these
+   chunks at a time.  This allows the client to play the music before it
+   has been fully downloaded and also allows the server to handle other
+   requests before streaming the entire file, such as a LIST request or
+   a request to play another song.
+
+5.  Server-Client State
+
+   The server keeps track of information for each client.  For each
+   client, the server stores the following information
+
+   *  The current song that the client is playing (this is altered by
+      PLAY commands recieved from the client)
+
+   *  The next chunk of the song that the client is to recieve (this is
+      updated each time a chunk is sent) (see DASH Chunking section)
+
+   *  Whether or not the client is currently playing a song (altered by
+      recieving PLAY and STOP commands)
+
+   *  A list of unexecuted commands recieved by the client.  Upon
+      reading a message from the client, the message will be parsed and
+      added to this list.  Then, in the sending thread, the message will
+      be handled.
